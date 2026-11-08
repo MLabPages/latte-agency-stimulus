@@ -1,6 +1,6 @@
 // 研究者向け設定。URLで変更できるのは condition のみ。
 export const CONFIG = Object.freeze({
-  version: '1.1.0', defaultCondition: 'passive',
+  version: '1.1.1', defaultCondition: 'passive',
   account: 'nagi_coffee', location: 'nagi coffee · ある日の午後',
   caption: 'ミルクとエスプレッソ、ひとつになる午後。',
   tags: '#アイスカフェラテ #カフェの時間',

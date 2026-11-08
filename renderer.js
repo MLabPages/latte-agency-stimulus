@@ -3,6 +3,11 @@ import { CONFIG } from './config.js';
 const W = 400, H = 500;
 export function createRenderer(canvas) {
   const c = canvas.getContext('2d');
+  // Paint columns on an integer pixel grid, then scale once to avoid seams at
+  // fractional CSS widths / device pixel ratios.
+  const liquidLayer=document.createElement('canvas');
+  liquidLayer.width=180;liquidLayer.height=217;
+  const liquidContext=liquidLayer.getContext('2d');
   let lastProgress=null, lastAngle=null, lastWidth=null, lastHeight=null;
   function glassPath() {
     c.beginPath(); c.moveTo(115, 181); c.bezierCurveTo(119, 227, 125, 369, 135, 402);
@@ -28,19 +33,26 @@ export function createRenderer(canvas) {
     ellipse(200,405,73,18,'rgba(70,45,24,.16)');
     c.save();glassPath();c.clip();
     c.fillStyle='rgba(255,255,255,.25)';c.fillRect(110,170,180,255);
-    // 1px strips: layer boundary and marbling collapse to exactly the same final color.
+    // A curved, softly diffused interface follows the cylindrical glass rather
+    // than a horizontal stripe. Both conditions share the same progress/phase.
     const {milk,coffee,latte}=CONFIG.palette;
-    for(let y=201;y<421;y++) {
-      const boundary=266 + Math.sin(angle*1.4+y*.035)*19*Math.sin(progress*Math.PI);
-      const blend=Math.max(0,Math.min(1,(y-boundary)/Math.max(1,progress*78)+.5));
-      const swirl=Math.sin(y*.12+angle*1.8)*Math.sin(progress*Math.PI)*.14;
-      const rgb=milk.map((m,i)=>{
-        const layered=coffee[i]*(1-blend)+m*blend;
-        return Math.round(layered*(1-progress)+latte[i]*progress+swirl*(1-progress)*30);
-      });
-      c.fillStyle=`rgb(${rgb.join(',')})`;c.fillRect(110,y,180,1.5);
+    const color=base=>`rgb(${base.map((value,i)=>Math.round(value*(1-progress)+latte[i]*progress)).join(',')})`;
+    const coffeeColor=color(coffee), milkColor=color(milk);
+    const stirring=Math.sin(progress*Math.PI), softness=5+progress*86;
+    for(let x=110;x<290;x++) {
+      const lateral=(x-200)/79;
+      const depth=11*Math.sqrt(Math.max(0,1-lateral*lateral));
+      const quietEdge=1.2*Math.sin(x*.075)+.6*Math.sin(x*.19);
+      const folds=(Math.sin(x*.056+angle*1.4)*14+Math.sin(x*.105-angle*.8)*5)*stirring;
+      const boundary=259+depth+quietEdge+folds;
+      const liquid=liquidContext.createLinearGradient(0,boundary-204-softness/2,0,boundary-204+softness/2);
+      liquid.addColorStop(0,coffeeColor);liquid.addColorStop(1,milkColor);
+      liquidContext.fillStyle=liquid;liquidContext.fillRect(x-110,0,1,217);
     }
-    ellipse(200,204,82,21,`rgba(85,48,27,${.45*(1-progress)})`);
+    c.drawImage(liquidLayer,110,204);
+    // Keep a projected elliptical liquid surface visible in the mixed state too.
+    ellipse(200,204,82,21,coffeeColor);
+    ellipse(200,201,77,16,'rgba(255,255,255,.055)');
     // Submerged spoon: the same projected circular trajectory at every progress.
     const tipX=200+48*Math.cos(angle), tipY=282+17*Math.sin(angle);
     const handleX=221+40*Math.cos(angle), handleY=133+14*Math.sin(angle);
