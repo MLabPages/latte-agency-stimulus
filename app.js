@@ -1,5 +1,5 @@
 import { CONFIG } from './config.js';
-import { TAU, angularStep, mixProgress, passiveTravel } from './mixer.js';
+import { TAU, dragStep, mixProgress, passiveTravel } from './mixer.js';
 import { createRenderer } from './renderer.js';
 import { createExperimentLog } from './logger.js';
 
@@ -13,10 +13,11 @@ document.body.classList.add(condition);
 for (const [id, value] of Object.entries({account:CONFIG.account,location:CONFIG.location,'caption-account':CONFIG.account,caption:CONFIG.caption,tags:CONFIG.tags})) document.getElementById(id).textContent=value;
 const canvas=document.getElementById('latte'), next=document.getElementById('next'), instruction=document.getElementById('instruction');
 instruction.textContent=condition==='interactive'?CONFIG.interactiveInstruction:CONFIG.passiveInstruction;
+instruction.hidden=!CONFIG.showInstructions;
 const logger=createExperimentLog(condition,CONFIG), log=logger.data, renderer=createRenderer(canvas);
 // Public adapter: use getLog() for a snapshot; listen to latte:log or latte:next.
 window.latteExperiment=Object.freeze({ getLog:logger.snapshot, config:CONFIG });
-let start=null, hiddenAt=null, hiddenTotal=0, angle=0, travel=0, pointer=null, lastPoint=null, lastAngle=null, segmentStart=null;
+let start=null, hiddenAt=null, hiddenTotal=0, angle=0, travel=0, pointer=null, lastPoint=null, direction=1, segmentStart=null;
 let startedAt=0, ready=false, exited=false;
 const now=()=>performance.now();
 const iso=()=>new Date().toISOString();
@@ -25,7 +26,7 @@ function finishPointer(t=now()) {
   if(pointer===null)return;
   log.operationDurationMs+=t-segmentStart;
   log.operationEndAt=iso(); log.operationSpanMs=t-startedAt;
-  const id=pointer;pointer=null;lastAngle=null;lastPoint=null;
+  const id=pointer;pointer=null;lastPoint=null;
   if(canvas.hasPointerCapture(id))canvas.releasePointerCapture(id);
 }
 function complete(t) {
@@ -44,7 +45,7 @@ function stopStimulus(reason,t=now()) {
 }
 function offerNext(reason,t) {
   ready=true;
-  if(reason==='timeout') { log.fallbackUsed=true;instruction.textContent=CONFIG.fallbackInstruction; }
+  if(reason==='timeout') { log.fallbackUsed=true;instruction.hidden=false;instruction.textContent=CONFIG.fallbackInstruction; }
   stopStimulus(reason,t);next.hidden=false;
 }
 function frame(t) {
@@ -61,32 +62,34 @@ function frame(t) {
   renderer.draw(mixProgress(travel,CONFIG.requiredTurns),angle);
   if(!exited)requestAnimationFrame(frame);
 }
-function point(e){const rect=canvas.getBoundingClientRect();return{x:(e.clientX-rect.left)*400/rect.width,y:(e.clientY-rect.top)*500/rect.height,cx:e.clientX,cy:e.clientY};}
-function polar(p){const x=p.x-CONFIG.inputCenter.x,y=p.y-CONFIG.inputCenter.y;return{angle:Math.atan2(y,x),valid:Math.hypot(x,y)>=CONFIG.minRadius&&Math.hypot(x,y)<=CONFIG.maxRadius};}
+function point(e,rect=canvas.getBoundingClientRect()){return{x:(e.clientX-rect.left)*400/rect.width,y:(e.clientY-rect.top)*500/rect.height,cx:e.clientX,cy:e.clientY};}
 canvas.addEventListener('pointerdown',e=>{
   if(condition!=='interactive'||start===null||ready||log.completed||pointer!==null||!e.isPrimary||e.button!==0)return;
   const p=point(e);
-  if(p.x<100||p.x>300||p.y<150||p.y>424)return;
+  const bounds=CONFIG.inputBounds;
+  if(p.x<bounds.left||p.x>bounds.right||p.y<bounds.top||p.y>bounds.bottom)return;
   e.preventDefault();pointer=e.pointerId;canvas.setPointerCapture(pointer);lastPoint=p;
-  const a=polar(p);lastAngle=a.valid?a.angle:null;
   segmentStart=now();log.pointerSessions++;log.pointerType=e.pointerType;
   if(log.operationStartAt===null){log.operationStartAt=iso();startedAt=segmentStart;logger.emit('operation-start');}
 });
 canvas.addEventListener('pointermove',e=>{
   if(e.pointerId!==pointer)return;
-  e.preventDefault();const p=point(e);
-  log.pointerDistancePx+=Math.hypot(p.cx-lastPoint.cx,p.cy-lastPoint.cy);
-  log.pointerDistanceScene+=Math.hypot(p.x-lastPoint.x,p.y-lastPoint.y);lastPoint=p;
-  const a=polar(p);
-  const delta=a.valid?angularStep(lastAngle,a.angle,CONFIG.maxStepRadians):0;
-  if(a.valid&&lastAngle!==null&&delta===0&&a.angle!==lastAngle)log.invalidAngularSteps++;
-  lastAngle=a.valid?a.angle:null;
-  angle+=delta;travel+=Math.abs(delta);
-  log.acceptedAngularTravel=travel;log.approximateTurns=travel/TAU;
-  // Immediate redraw keeps the spoon coupled to each pointer event, without auto interpolation.
-  const progress=mixProgress(travel,CONFIG.requiredTurns);
-  if(progress>=1)complete(now());
-  renderer.draw(progress,angle);
+  e.preventDefault();
+  const rect=canvas.getBoundingClientRect();
+  const samples=Array.from(e.getCoalescedEvents?.() ?? []);
+  const tail=samples.at(-1);
+  if(!tail||tail.clientX!==e.clientX||tail.clientY!==e.clientY)samples.push(e);
+  for(const sample of samples) {
+    const p=point(sample,rect), step=dragStep(lastPoint,p,CONFIG,direction);
+    log.pointerDistancePx+=Math.hypot(p.cx-lastPoint.cx,p.cy-lastPoint.cy);
+    log.pointerDistanceScene+=step.distance;lastPoint=p;direction=step.direction;
+    angle+=step.delta;travel+=Math.abs(step.delta);
+    log.pointerAngularTravel+=step.angularDistance;
+    if(step.usedFallback)log.distanceFallbackSteps++;
+    log.acceptedAngularTravel=travel;log.approximateTurns=travel/TAU;
+    if(mixProgress(travel,CONFIG.requiredTurns)>=1){complete(now());break;}
+  }
+  // The next animation frame draws the latest input once, without inertia or a timer-driven tail.
 });
 for(const type of ['pointerup','pointercancel','lostpointercapture'])canvas.addEventListener(type,e=>{if(e.pointerId===pointer)finishPointer();});
 document.addEventListener('visibilitychange',()=>{

@@ -3,6 +3,7 @@ import { CONFIG } from './config.js';
 const W = 400, H = 500;
 export function createRenderer(canvas) {
   const c = canvas.getContext('2d');
+  let lastProgress=null, lastAngle=null, lastWidth=null, lastHeight=null;
   function glassPath() {
     c.beginPath(); c.moveTo(115, 181); c.bezierCurveTo(119, 227, 125, 369, 135, 402);
     c.bezierCurveTo(147, 426, 253, 426, 265, 402); c.lineTo(285, 181); c.closePath();
@@ -11,6 +12,8 @@ export function createRenderer(canvas) {
   function draw(progress, angle) {
     const dpr = Math.min(devicePixelRatio || 1, 2);
     const width = Math.round(canvas.clientWidth * dpr), height = Math.round(canvas.clientHeight * dpr);
+    if(progress===lastProgress && angle===lastAngle && width===lastWidth && height===lastHeight)return;
+    lastProgress=progress;lastAngle=angle;lastWidth=width;lastHeight=height;
     if(canvas.width!==width || canvas.height!==height){canvas.width=width;canvas.height=height;}
     c.setTransform(canvas.width/W,0,0,canvas.height/H,0,0);
     const bg=c.createLinearGradient(0,0,400,500); bg.addColorStop(0,'#ebe6db'); bg.addColorStop(.55,'#e0d7c7'); bg.addColorStop(1,'#cbbb9f');
