@@ -1,11 +1,12 @@
 // 研究者向け設定。URLで変更できるのは condition のみ。
 export const CONFIG = Object.freeze({
-  version: '1.1.1', defaultCondition: 'passive',
+  version: '1.2.0', defaultCondition: 'passive',
   account: 'nagi_coffee', location: 'nagi coffee · ある日の午後',
   caption: 'ミルクとエスプレッソ、ひとつになる午後。',
   tags: '#アイスカフェラテ #カフェの時間',
   showInstructions: true, // false: 共通の実験説明側で指示する。救済メッセージは表示。
-  interactiveInstruction: '指で円を描くように動かして、ラテを混ぜてください',
+  // 非随伴操作・随伴操作で必ず同じ文言を使用する。
+  operationInstruction: 'グラス上で円を描くように指を動かしてください',
   passiveInstruction: 'ラテが混ざる様子を、そのままご覧ください',
   fallbackInstruction: '操作が難しい場合は、そのまま「次へ」に進めます。',
   initialHoldMs: 700, mixingDurationMs: 5500, requiredTurns: 4,

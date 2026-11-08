@@ -5,19 +5,22 @@ import { createExperimentLog } from './logger.js';
 
 const requested = new URLSearchParams(location.search).get('condition');
 const condition = requested ?? CONFIG.defaultCondition;
-if (!['passive', 'interactive'].includes(condition)) {
-  document.body.textContent = '条件が不正です。?condition=passive または ?condition=interactive を指定してください。';
+if (!['passive', 'noncontingent', 'interactive'].includes(condition)) {
+  document.body.textContent = '条件が不正です。condition に passive、noncontingent、interactive のいずれかを指定してください。';
   throw new Error('Invalid experiment condition');
 }
 document.body.classList.add(condition);
+const inputEnabled=condition!=='passive', automaticPlayback=condition!=='interactive';
+if(inputEnabled)document.body.classList.add('operable');
 for (const [id, value] of Object.entries({account:CONFIG.account,location:CONFIG.location,'caption-account':CONFIG.account,caption:CONFIG.caption,tags:CONFIG.tags})) document.getElementById(id).textContent=value;
 const canvas=document.getElementById('latte'), next=document.getElementById('next'), instruction=document.getElementById('instruction');
-instruction.textContent=condition==='interactive'?CONFIG.interactiveInstruction:CONFIG.passiveInstruction;
+instruction.textContent=inputEnabled?CONFIG.operationInstruction:CONFIG.passiveInstruction;
 instruction.hidden=!CONFIG.showInstructions;
 const logger=createExperimentLog(condition,CONFIG), log=logger.data, renderer=createRenderer(canvas);
 // Public adapter: use getLog() for a snapshot; listen to latte:log or latte:next.
 window.latteExperiment=Object.freeze({ getLog:logger.snapshot, config:CONFIG });
 let start=null, hiddenAt=null, hiddenTotal=0, angle=0, travel=0, pointer=null, lastPoint=null, direction=1, segmentStart=null;
+let inputTravel=0;
 let startedAt=0, ready=false, exited=false;
 const now=()=>performance.now();
 const iso=()=>new Date().toISOString();
@@ -52,7 +55,7 @@ function frame(t) {
   if(start===null && !document.hidden){start=t;log.stimulusStartAt=iso();logger.emit('stimulus-start');}
   if(start!==null && !document.hidden && !ready && !exited) {
     const duration=elapsed(t);
-    if(condition==='passive') {
+    if(automaticPlayback) {
       travel=passiveTravel(duration,CONFIG);angle=travel;
       if(mixProgress(travel,CONFIG.requiredTurns)>=1)complete(t);
     }
@@ -64,7 +67,7 @@ function frame(t) {
 }
 function point(e,rect=canvas.getBoundingClientRect()){return{x:(e.clientX-rect.left)*400/rect.width,y:(e.clientY-rect.top)*500/rect.height,cx:e.clientX,cy:e.clientY};}
 canvas.addEventListener('pointerdown',e=>{
-  if(condition!=='interactive'||start===null||ready||log.completed||pointer!==null||!e.isPrimary||e.button!==0)return;
+  if(!inputEnabled||start===null||ready||log.completed||pointer!==null||!e.isPrimary||e.button!==0)return;
   const p=point(e);
   const bounds=CONFIG.inputBounds;
   if(p.x<bounds.left||p.x>bounds.right||p.y<bounds.top||p.y>bounds.bottom)return;
@@ -83,11 +86,19 @@ canvas.addEventListener('pointermove',e=>{
     const p=point(sample,rect), step=dragStep(lastPoint,p,CONFIG,direction);
     log.pointerDistancePx+=Math.hypot(p.cx-lastPoint.cx,p.cy-lastPoint.cy);
     log.pointerDistanceScene+=step.distance;lastPoint=p;direction=step.direction;
-    angle+=step.delta;travel+=Math.abs(step.delta);
+    inputTravel+=Math.abs(step.delta);
     log.pointerAngularTravel+=step.angularDistance;
     if(step.usedFallback)log.distanceFallbackSteps++;
-    log.acceptedAngularTravel=travel;log.approximateTurns=travel/TAU;
-    if(mixProgress(travel,CONFIG.requiredTurns)>=1){complete(now());break;}
+    log.acceptedAngularTravel=inputTravel;log.approximateTurns=inputTravel/TAU;
+    if(!log.operationCompleted&&mixProgress(inputTravel,CONFIG.requiredTurns)>=1){
+      log.operationCompleted=true;log.operationCompletedAt=iso();
+      log.operationTimeToCriterionMs=now()-startedAt;logger.emit('operation-complete');
+    }
+    // Noncontingent input is measured, but never changes playback state or timing.
+    if(!automaticPlayback){
+      angle+=step.delta;travel=inputTravel;
+      if(mixProgress(travel,CONFIG.requiredTurns)>=1){complete(now());break;}
+    }
   }
   // The next animation frame draws the latest input once, without inertia or a timer-driven tail.
 });

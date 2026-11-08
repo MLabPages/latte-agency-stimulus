@@ -1,11 +1,14 @@
 // 保存・外部送信はここに追加。初版はメモリ内のみ。座標列・個人情報は保存しない。
 export function createExperimentLog(condition, config) {
   const data = {
-    schemaVersion: 2, stimulusVersion: config.version, condition,
+    schemaVersion: 3, stimulusVersion: config.version, condition,
+    automaticPlayback: condition!=='interactive', actionContingent: condition==='interactive',
     settings: structuredClone(config),
     stimulusStartAt: null, stimulusEndAt: null, stimulusDurationMs: null,
     operationStartAt: null, operationEndAt: null, operationDurationMs: 0,
     operationSpanMs: null, pointerDistancePx: 0, pointerDistanceScene: 0,
+    operationCompleted: condition==='passive'?null:false,
+    operationCompletedAt: null, operationTimeToCriterionMs: null,
     approximateTurns: 0, acceptedAngularTravel: 0, pointerAngularTravel: 0,
     distanceFallbackSteps: 0, mixedAt: null,
     timeToMixMs: null, operationTimeToMixMs: null,
